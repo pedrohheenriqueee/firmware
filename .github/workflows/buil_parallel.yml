@@ -83,8 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - id: build
-        name: setup Python
+      - name: setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -130,7 +129,6 @@ jobs:
 
       - name: Prepare PlatformIO file
         run: |
-
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             version=${{ github.ref_name }}
           else
@@ -164,120 +162,10 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  post_compile_steps:
-    name: Update Placeholders
-    runs-on: ubuntu-latest
-    environment: github_release
-    needs: compile_sketch
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') || github.ref_type == 'tag'
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: '*'
-          merge-multiple: true
-          path: artifacts
-
-      - name: Ensure releases exist and get IDs
-        id: get_release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const ensureByTag = async (tag, prerelease=true) => {
-              try {
-                const { data } = await github.rest.repos.getReleaseByTag({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  tag
-                });
-                return data.id;
-              } catch (e) {
-                if (e.status !== 404) throw e;
-                const { data } = await github.rest.repos.createRelease({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  tag_name: tag,
-                  name: tag,
-                  prerelease
-                });
-                return data.id;
-              }
-            };
-
-            const betaId = await ensureByTag('betaRelease');
-            const lastId = await ensureByTag('lastRelease');
-
-            core.setOutput('beta', String(betaId));
-            core.setOutput('last', String(lastId));
-
-      - name: Get current sha
-        id: get_sha
-        run: |
-          echo "GITHUB_SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-      - name: Delete old betaRelease assets
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const release_id = ${{ steps.get_release.outputs.beta }};
-            const assets = await github.rest.repos.listReleaseAssets({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release_id
-            });
-            for (const asset of assets.data) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id
-              });
-            }
-
-      - name: Upload new betaRelease asset
-        uses: softprops/action-gh-release@v2
-        with:
-          name: betaRelease commit (${{ steps.get_sha.outputs.GITHUB_SHA_SHORT }})
-          tag_name: betaRelease
-          prerelease: true
-          files: artifacts/**
-          fail_on_unmatched_files: false
-          make_latest: false
-          generate_release_notes: false
-
-      - name: Delete old lastRelease assets
-        uses: actions/github-script@v6
-        if: github.ref_type == 'tag'
-        with:
-          script: |
-            const release_id = ${{ steps.get_release.outputs.last }};
-            const assets = await github.rest.repos.listReleaseAssets({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: release_id
-            });
-            for (const asset of assets.data) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id
-              });
-            }
-
-      - name: Upload new lastRelease asset
-        uses: softprops/action-gh-release@v2
-        if: github.ref_type == 'tag'
-        with:
-          name: lastRelease commit (${{ steps.get_sha.outputs.GITHUB_SHA_SHORT }})
-          tag_name: lastRelease
-          prerelease: true
-          files: artifacts/**
-          fail_on_unmatched_files: false
-          make_latest: false
-          generate_release_notes: false
-
-      # ============================================
-      # PARTE REMOVIDA: Deploy do WebPage (estava dando erro)
-      # ============================================
+  # ============================================
+  # Job post_compile_steps COMPLETAMENTE REMOVIDO
+  # (ele que tentava rodar o deploy.yml)
+  # ============================================
 
   create_release:
     runs-on: ubuntu-latest
@@ -289,25 +177,21 @@ jobs:
         name: Get Version
         run: |
           set -x
-
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             version=${{ github.ref_name }}
           else
             version="${GITHUB_SHA::7}"
           fi
-
-          echo "version=${version}" > $GITHUB_OUTPUT
-      - uses: actions/download-artifact@v4
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
           merge-multiple: true
 
       - name: List all files
-        if: always()
         run: |
-          set -x
-          pwd
-          ls -all
-          tree
+          ls -la
 
       - name: Create Release ${{ steps.bruce_version.outputs.version }}
         uses: softprops/action-gh-release@v1
